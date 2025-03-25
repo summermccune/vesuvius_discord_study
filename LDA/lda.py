@@ -1,17 +1,14 @@
 import json
 import re
 import spacy
-import nltk
-nltk.download('stopwords')
-import gensim
 import pyLDAvis
 import pyLDAvis.gensim_models as gensimvis
-import matplotlib.pyplot as plt
 from gensim.utils import simple_preprocess
 from gensim.corpora.dictionary import Dictionary
 from gensim.models.ldamodel import LdaModel
 from nltk.corpus import stopwords
 from tqdm import tqdm
+from collections import defaultdict
 
 # Load spaCy model for lemmatization
 nlp = spacy.load("en_core_web_sm")
@@ -43,8 +40,14 @@ def preprocess_text(text):
     text = re.sub(r"\s+", " ", text).strip()  # Remove extra spaces
     words = simple_preprocess(text, deacc=True)  # Tokenization
     words = [word for word in words if word not in stop_words]  # Remove stopwords
+
+    # Custom words to remove
+    custom_remove = {"scroll", "scrolls", "papyrus", "image", "ink"}
+    words = [word for word in words if word not in custom_remove]  # Remove custom words
+
     words = [nlp(word)[0].lemma_ for word in words]  # Lemmatization
     return words
+
 
 # Apply preprocessing to all messages
 processed_texts = [preprocess_text(msg) for msg in sample_text]
@@ -54,15 +57,14 @@ dictionary = Dictionary(processed_texts)
 corpus = [dictionary.doc2bow(text) for text in processed_texts]
 
 # Train LDA Model
-num_topics = 5  # Change based on how many topics you want
-lda_model = LdaModel(corpus=corpus, id2word=dictionary, num_topics=num_topics, passes=10, random_state=42)
+num_topics = 10  # Change based on how many topics you want
+lda_model = LdaModel(corpus=corpus, id2word=dictionary, num_topics=num_topics, passes=15, random_state=42)
 
 # Print topics
 print("\nTop Topics Found:\n")
 for idx, topic in lda_model.print_topics():
     print(f"Topic {idx}: {topic}")
 
-# Function to assign topics to messages
 def get_topic(text):
     bow = dictionary.doc2bow(preprocess_text(text))
     topics = lda_model.get_document_topics(bow)
@@ -71,12 +73,22 @@ def get_topic(text):
 # Assign topics to each message
 chat_topics = [(msg, get_topic(msg)) for msg in sample_text]
 
-# Save topic results to a file
+# Group messages by topic
+topic_dict = defaultdict(list)
+for msg, topic in chat_topics:
+    if topic is not None:
+        topic_dict[topic].append(msg)
+
+# Sort topics numerically
+sorted_topics = dict(sorted(topic_dict.items()))
+
+# Save ordered topic results to a file
 output_file = "discord_chat_topics.json"
 with open(output_file, "w", encoding="utf-8") as f:
-    json.dump(chat_topics, f, indent=4)
+    json.dump(sorted_topics, f, indent=4)
 
-print(f"\nTopic assignments saved to {output_file}")
+print(f"\nTopic assignments saved to {output_file} (Ordered by topic)")
+
 
 # Visualize with pyLDAvis
 vis = gensimvis.prepare(lda_model, corpus, dictionary)
